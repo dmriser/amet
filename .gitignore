@@ -1,0 +1,7 @@
+# Large files 
+*.pdf 
+*.png
+*.pkl 
+
+# Editor files 
+*~ 
