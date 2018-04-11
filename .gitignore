@@ -5,3 +5,6 @@
 
 # Editor files 
 *~ 
+
+# Others 
+*.egg* 

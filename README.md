@@ -1,4 +1,4 @@
-# Azimuthal Modulation Extraction Toolkit 
+# Phi-Fitter 
 This package contains various different parameter estimation
 methods. 
 

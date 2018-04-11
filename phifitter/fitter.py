@@ -62,7 +62,7 @@ class SingleRegularizedFitter(BaseFitter):
         while bad_fit:
             if self.bounds is not None:
                 result = minimize(func, x0=self.model.pars, bounds=self.bounds)
-                identity = np.identity(3)
+                identity = np.identity(self.model.n_pars)
                 err = np.sqrt(np.array(np.matrix(result.hess_inv * identity).diagonal()))
                 err = err[0]
             else:
@@ -101,7 +101,7 @@ class SingleFitter(BaseFitter):
         while bad_fit:
             if self.bounds is not None:
                 result = minimize(func, x0=self.model.pars, bounds=self.bounds)
-                identity = np.identity(3)
+                identity = np.identity(self.model.n_pars)
                 err = np.sqrt(np.array(np.matrix(result.hess_inv * identity).diagonal()))
                 err = err[0]
             else:
