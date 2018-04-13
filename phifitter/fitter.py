@@ -54,7 +54,12 @@ class SingleRegularizedFitter(BaseFitter):
         self.bounds = bounds 
         self.penalty = penalty 
 
-    def fit(self, phi, value, error):
+    def fit(self, phi, value, error, x0=None):
+
+        if x0 is not None:
+            self.model.pars = x0
+        else:
+            self.model.initialize_parameters()
         
         func = lambda p: self.loss_function(value, self.model.update_and_evaluate(phi, p), error) + self.penalty * np.sum(p**2)
 
@@ -93,9 +98,19 @@ class SingleFitter(BaseFitter):
         self.loss_function = loss_function 
         self.bounds = bounds 
 
-    def fit(self, phi, value, error):
-        
+    def fit(self, phi, value, error, x0=None):
+
         func = lambda p: self.loss_function(value, self.model.update_and_evaluate(phi, p), error)
+
+        if x0 is not None:
+            self.model.pars = x0
+        else:
+            if self.bounds is None:
+                self.model.initialize_parameters()
+            else:
+                self.model.pars = utils.random_search(func, 
+                                                      self.bounds, 
+                                                      1000)
 
         bad_fit = True
         while bad_fit:
@@ -142,14 +157,14 @@ class ReplicaFitter(BaseFitter):
         # the single fitter is used for every fit 
         self.single_fitter = SingleFitter(self.model, self.loss_function, self.bounds)
 
-    def fit(self, phi, value, error):
+    def fit(self, phi, value, error, x0=None):
         
         # start with a fresh empty container 
-        self.fit_container = [] 
+        self.fit_container = []
 
         # run single fit 
         if self.n_cores is 1:
-            results = self._run_single(phi, value, error)
+            results = self._run_single(phi, value, error, x0)
             results = np.array(results, dtype=np.float32)
 
         # do multi core fitting 
@@ -163,7 +178,7 @@ class ReplicaFitter(BaseFitter):
             reps_to_give[-1] += self.n_replicas - np.sum(reps_to_give)
 
             for job in range(self.n_cores):
-                workers.append(Process(target=self._mp_worker, args=(q, phi, value, error, reps_to_give[job])))
+                workers.append(Process(target=self._mp_worker, args=(q, phi, value, error, x0, reps_to_give[job])))
                 workers[job].start()
 
             # get results
@@ -204,23 +219,26 @@ class ReplicaFitter(BaseFitter):
         ndf = len(phi)
         self.quality = 1-chi2pdf.cdf(loss.chi2(value, pred, error), ndf)
 
-    def _mp_worker(self, q, phi, value, error, reps):
+    def _mp_worker(self, q, phi, value, error, x0, reps):
         np.random.seed(os.getpid())
 
         results = []
         for irep in tqdm.tqdm(range(reps)):
             rep = utils.create_replica(value, error)
-            self.single_fitter.fit(phi, rep, error)
+            self.single_fitter.fit(phi, rep, error, x0)
             results.append(self.single_fitter.fit_parameters)
         
         q.put(results)
 
-    def _run_single(self, phi, value, error):
+    def _run_single(self, phi, value, error, x0):
         
         for irep in tqdm.tqdm(range(self.n_replicas)):
             rep = utils.create_replica(value, error)
-            self.single_fitter.fit(phi, rep, error)
+            self.single_fitter.fit(phi, rep, error, x0)
             self.fit_container.append(self.single_fitter.fit_parameters)
+
+            # to stop getting the same answer
+            #            self.single_fitter.model.initialize_parameters()
             
 class BayesianVegasFitter(BaseFitter):
     '''
