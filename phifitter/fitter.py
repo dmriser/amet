@@ -83,7 +83,7 @@ class SingleRegularizedFitter(BaseFitter):
                                        error)
 
         pred = self.model.update_and_evaluate(phi, self.fit_parameters)
-        ndf = len(phi)
+        ndf = len(phi) - self.model.n_pars 
         self.quality = 1-chi2pdf.cdf(loss.chi2(value, pred, error), ndf) 
 
 class SingleFitter(BaseFitter):
@@ -132,7 +132,7 @@ class SingleFitter(BaseFitter):
                                        error)
 
         pred = self.model.update_and_evaluate(phi, self.fit_parameters)
-        ndf = len(phi)
+        ndf = len(phi) - self.model.n_pars 
         self.quality = 1-chi2pdf.cdf(loss.chi2(value, pred, error), ndf) 
         
 class ReplicaFitter(BaseFitter):
@@ -216,7 +216,7 @@ class ReplicaFitter(BaseFitter):
                                        error)
 
         pred = self.model.update_and_evaluate(phi, self.fit_parameters)
-        ndf = len(phi)
+        ndf = len(phi) - self.model.n_pars
         self.quality = 1-chi2pdf.cdf(loss.chi2(value, pred, error), ndf)
 
     def _mp_worker(self, q, phi, value, error, x0, reps):
