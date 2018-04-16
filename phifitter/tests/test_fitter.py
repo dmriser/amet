@@ -93,5 +93,23 @@ class TestBayesianVegasFit(unittest.TestCase):
         metric = estimator.quality > 0.1
         self.assertTrue(metric)
 
+class TestBayesianMCMCFit(unittest.TestCase):
+
+    def test(self):
+        def prior(p):
+            return 1.0
+
+        bounds = [[-1, 1],
+                  [-1, 1],
+                  [-1, 1]]
+
+        estimator = fitter.BayesianMCMCFitter(likelihood=loss.likelihood, prior=prior,
+                                               bounds=bounds, model=physics_model.BeamSpinAsymmetryModel())
+    
+        x, y = estimator.samples.shape 
+        self.assertTrue(x is estimator.n_iterations)
+        self.assertTrue(y is estimator.model.n_pars)
+
+
 if __name__ == "__main__":
     unittest.main() 

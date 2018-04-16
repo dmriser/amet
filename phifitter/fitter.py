@@ -56,12 +56,17 @@ class SingleRegularizedFitter(BaseFitter):
 
     def fit(self, phi, value, error, x0=None):
 
+        func = lambda p: self.loss_function(value, self.model.update_and_evaluate(phi, p), error) + self.penalty * np.sum(p**2)
+
         if x0 is not None:
             self.model.pars = x0
         else:
-            self.model.initialize_parameters()
-        
-        func = lambda p: self.loss_function(value, self.model.update_and_evaluate(phi, p), error) + self.penalty * np.sum(p**2)
+            if self.bounds is None:
+                self.model.initialize_parameters()
+            else:
+                self.model.pars = utils.random_search(func,
+                                                      self.bounds,
+                                                      1000)
 
         bad_fit = True
         while bad_fit:
@@ -83,7 +88,7 @@ class SingleRegularizedFitter(BaseFitter):
                                        error)
 
         pred = self.model.update_and_evaluate(phi, self.fit_parameters)
-        ndf = len(phi) - self.model.n_pars 
+        ndf = len(phi)
         self.quality = 1-chi2pdf.cdf(loss.chi2(value, pred, error), ndf) 
 
 class SingleFitter(BaseFitter):
@@ -132,7 +137,7 @@ class SingleFitter(BaseFitter):
                                        error)
 
         pred = self.model.update_and_evaluate(phi, self.fit_parameters)
-        ndf = len(phi) - self.model.n_pars 
+        ndf = len(phi)
         self.quality = 1-chi2pdf.cdf(loss.chi2(value, pred, error), ndf) 
         
 class ReplicaFitter(BaseFitter):
@@ -216,7 +221,7 @@ class ReplicaFitter(BaseFitter):
                                        error)
 
         pred = self.model.update_and_evaluate(phi, self.fit_parameters)
-        ndf = len(phi) - self.model.n_pars
+        ndf = len(phi)
         self.quality = 1-chi2pdf.cdf(loss.chi2(value, pred, error), ndf)
 
     def _mp_worker(self, q, phi, value, error, x0, reps):
@@ -297,4 +302,66 @@ class BayesianVegasFitter(BaseFitter):
         return [f, f*p[0], f*p[1], f*p[2],
                 f*p[0]**2, f*p[1]**2, f*p[2]**2]
 
+class BayesianMCMCFitter(BaseFitter):
+    '''
+    Metropolis-Hastings algorithm for 
+    sampling a posterior.
+    '''
+
+    def __init__(self, model, likelihood, prior, bounds,
+                 n_iterations=2000, burn_in=500, 
+                 proposal_sigma=0.1):
+
+        self.model = model
+        self.likelihood = likelihood
+        self.prior = prior
+        self.bounds = bounds
+        self.n_iterations = n_iterations
+        self.burn_in = burn_in 
+        self.proposal_sigma = proposal_sigma 
+        self.x = self.model.pars
+
+        self.samples = np.zeros((self.n_iterations, self.model.n_pars))
+        self.accept_rate = np.zeros(self.n_iterations)
+        self.prob = np.zeros(self.n_iterations)
+
+    def fit(self, phi, value, error):
+        
+        accepted = 0 
+        for iter in range(self.n_iterations):
+            x_prop = self.propose_jump()
+            theory = self.model.update_and_evaluate(phi, self.x)
+            theory_prop = self.model.update_and_evaluate(phi, x_prop)
+            prob = self.likelihood(value, theory, error)*self.prior(self.x)
+            prob_prop = self.likelihood(value, theory_prop, error)*self.prior(x_prop)
+
+            if np.random.uniform(0,1) < prob_prop/prob:
+                self.x = x_prop 
+                accepted += 1 
+
+            self.samples[iter] = self.x 
+            self.accept_rate[iter] = float(accepted)/float(iter+1)
+            self.prob[iter] = prob
+        
+        self._set_results(phi, value, error)
+
+    def propose_jump(self):
+        return np.random.normal(self.x, self.proposal_sigma)
+
+    def _set_results(self, phi, value, error):
+        
+        self.fit_parameters = np.zeros(self.model.n_pars)
+        self.fit_errors = np.zeros(self.model.n_pars)
+
+        for ipar in range(self.model.n_pars):
+            self.fit_parameters[ipar] = np.average(self.samples[self.burn_in:,ipar])
+            self.fit_errors[ipar] = np.std(self.samples[self.burn_in:,ipar])
+
+        self.loss = loss.chi2(value,
+                              self.model.update_and_evaluate(phi, self.fit_parameters),
+                              error)
+
+        pred = self.model.update_and_evaluate(phi, self.fit_parameters)
+        ndf = len(phi)
+        self.quality = 1-chi2pdf.cdf(loss.chi2(value, pred, error), ndf)
 
