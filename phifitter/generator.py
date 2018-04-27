@@ -1,7 +1,6 @@
 import numpy as np
 
 import physics_model 
-import utils 
 
 def generate(model=physics_model.BeamSpinAsymmetryModel(),
              parameters=None,

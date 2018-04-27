@@ -7,13 +7,13 @@ from phifitter import physics_model
 
 
 class TestBSAModel(unittest.TestCase):
-    def test(self):
+    def test_instantiation(self):
         m = physics_model.BeamSpinAsymmetryModel() 
         self.assertTrue(m is not None)
         
 
 class TestUnpolarizedSIDISModel(unittest.TestCase):
-    def test(self): 
+    def test_instantiation(self): 
         m = physics_model.UnpolarizedSIDISModel() 
         self.assertTrue(m is not None)
 

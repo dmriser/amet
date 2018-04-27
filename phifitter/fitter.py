@@ -13,6 +13,26 @@ import loss
 import physics_model
 import utils 
 
+
+class FitResult(dict):
+    '''
+    FitResult:
+    ----------
+    This class is returned by the fit methods 
+    below and contains common information.
+    '''
+    def __getattr__(self, name):
+        try:
+            return self[name]
+        except KeyError:
+            raise AttributeError(name)
+
+    __setattr__ = dict.__setitem__
+    __delattr__ = dict.__delitem__
+
+    def __dir__(self):
+        return list(self.keys())
+    
 class BaseFitter(object):
     '''
     BaseFitter: 
@@ -25,10 +45,6 @@ class BaseFitter(object):
         self.bounds         = None 
         self.model          = None 
         self.loss_function  = None 
-        self.fit_parameters = None 
-        self.fit_errors     = None 
-        self.loss           = None 
-        self.quality        = None 
 
     def fit(self, phi, value, error):
         pass 
@@ -73,7 +89,7 @@ class SingleRegularizedFitter(BaseFitter):
             if self.bounds is not None:
                 result = minimize(func, x0=self.model.pars, bounds=self.bounds)
                 identity = np.identity(self.model.n_pars)
-                err = np.sqrt(np.array(np.matrix(result.hess_inv * identity).diagonal()))
+                err = np.sqrt(np.abs(np.array(np.matrix(result.hess_inv * identity).diagonal())))
                 err = err[0]
             else:
                 result = minimize(func, x0=self.model.pars)
@@ -81,15 +97,21 @@ class SingleRegularizedFitter(BaseFitter):
 
             bad_fit = not result.success
 
-        self.fit_parameters = result.x 
-        self.fit_errors = err
-        self.loss = self.loss_function(value, 
-                                       self.model.update_and_evaluate(phi, self.fit_parameters), 
-                                       error)
+        fit_parameters = result.x 
+        fit_errors = err
+        loss_value = self.loss_function(value, 
+                                        self.model.update_and_evaluate(phi, fit_parameters), 
+                                        error)
 
-        pred = self.model.update_and_evaluate(phi, self.fit_parameters)
+        pred = self.model.update_and_evaluate(phi, fit_parameters)
         ndf = len(phi)
-        self.quality = 1-chi2pdf.cdf(loss.chi2(value, pred, error), ndf) 
+        quality = 1-chi2pdf.cdf(loss.chi2(value, pred, error), ndf) 
+
+        return FitResult(fit_parameters=fit_parameters,
+                         fit_errors=fit_errors,
+                         loss=loss_value,
+                         quality=quality,
+                         ndf=ndf)
 
 class SingleFitter(BaseFitter):
     '''
@@ -122,7 +144,7 @@ class SingleFitter(BaseFitter):
             if self.bounds is not None:
                 result = minimize(func, x0=self.model.pars, bounds=self.bounds)
                 identity = np.identity(self.model.n_pars)
-                err = np.sqrt(np.array(np.matrix(result.hess_inv * identity).diagonal()))
+                err = np.sqrt(np.abs(np.array(np.matrix(result.hess_inv * identity).diagonal())))
                 err = err[0]
             else:
                 result = minimize(func, x0=self.model.pars)
@@ -130,16 +152,22 @@ class SingleFitter(BaseFitter):
 
             bad_fit = not result.success
 
-        self.fit_parameters = result.x 
-        self.fit_errors = err
-        self.loss = self.loss_function(value, 
-                                       self.model.update_and_evaluate(phi, self.fit_parameters), 
-                                       error)
+        fit_parameters = result.x 
+        fit_errors = err
+        loss_value = self.loss_function(value, 
+                                        self.model.update_and_evaluate(phi, fit_parameters), 
+                                        error)
 
-        pred = self.model.update_and_evaluate(phi, self.fit_parameters)
+        pred = self.model.update_and_evaluate(phi, fit_parameters)
         ndf = len(phi)
-        self.quality = 1-chi2pdf.cdf(loss.chi2(value, pred, error), ndf) 
+        quality = 1-chi2pdf.cdf(loss.chi2(value, pred, error), ndf) 
         
+        return FitResult(fit_parameters=fit_parameters,
+                         fit_errors=fit_errors,
+                         loss=loss_value,
+                         quality=quality,
+                         ndf=ndf)
+
 class ReplicaFitter(BaseFitter):
     '''
     ReplicaFitter runs n_replicas single fits on 
@@ -155,9 +183,6 @@ class ReplicaFitter(BaseFitter):
         self.n_replicas = n_replicas 
         self.n_cores = n_cores 
         self.fit_container = []
-
-        self.fit_parameters = np.zeros(self.model.n_pars)
-        self.fit_errors = np.zeros(self.model.n_pars)
 
         # the single fitter is used for every fit 
         self.single_fitter = SingleFitter(self.model, self.loss_function, self.bounds)
@@ -206,32 +231,41 @@ class ReplicaFitter(BaseFitter):
 
 
         # setup results 
-        self._set_results(phi, value, error) 
+        return self._set_results(phi, value, error) 
 
     def _set_results(self, phi, value, error):
 
         self.fit_container = np.array(self.fit_container, dtype=np.float32)
         
+        fit_parameters = np.zeros(self.model.n_pars)
+        fit_errors = np.zeros(self.model.n_pars) 
         for ipar in range(self.model.n_pars):
-            self.fit_parameters[ipar] = np.average(self.fit_container[:,ipar])
-            self.fit_errors[ipar] = np.std(self.fit_container[:,ipar])
+            fit_parameters[ipar] = np.average(self.fit_container[:,ipar])
+            fit_errors[ipar] = np.std(self.fit_container[:,ipar])
 
-        self.loss = self.loss_function(value,
-                                       self.model.update_and_evaluate(phi, self.fit_parameters),
-                                       error)
+        loss_value = self.loss_function(value,
+                                        self.model.update_and_evaluate(phi, fit_parameters),
+                                        error)
 
-        pred = self.model.update_and_evaluate(phi, self.fit_parameters)
+        pred = self.model.update_and_evaluate(phi, fit_parameters)
         ndf = len(phi)
-        self.quality = 1-chi2pdf.cdf(loss.chi2(value, pred, error), ndf)
+        quality = 1-chi2pdf.cdf(loss.chi2(value, pred, error), ndf)
 
+        return FitResult(fit_parameters=fit_parameters,
+                         fit_errors=fit_errors,
+                         loss=loss_value,
+                         quality=quality,
+                         ndf=ndf,
+                         replicas=self.fit_container)
+        
     def _mp_worker(self, q, phi, value, error, x0, reps):
         np.random.seed(os.getpid())
 
         results = []
-        for irep in tqdm.tqdm(range(reps)):
+        for irep in range(reps):
             rep = utils.create_replica(value, error)
-            self.single_fitter.fit(phi, rep, error, x0)
-            results.append(self.single_fitter.fit_parameters)
+            fitter_result = self.single_fitter.fit(phi, rep, error, x0)
+            results.append(fitter_result.fit_parameters)
         
         q.put(results)
 
@@ -239,8 +273,8 @@ class ReplicaFitter(BaseFitter):
         
         for irep in tqdm.tqdm(range(self.n_replicas)):
             rep = utils.create_replica(value, error)
-            self.single_fitter.fit(phi, rep, error, x0)
-            self.fit_container.append(self.single_fitter.fit_parameters)
+            fitter_result = self.single_fitter.fit(phi, rep, error, x0)
+            self.fit_container.append(fitter_result.fit_parameters)
 
             # to stop getting the same answer
             #            self.single_fitter.model.initialize_parameters()
@@ -258,9 +292,15 @@ class BayesianVegasFitter(BaseFitter):
         self.likelihood = likelihood
         self.prior = prior 
         self.bounds = bounds 
-        self.z = 0.0
         self.n_iterations = n_iterations 
         self.n_evaluations = n_evaluations 
+
+
+    def _integrand(self, phi, value, error, p):
+        theory = self.model.update_and_evaluate(phi, p)
+        f = self.likelihood(value, theory, error)*self.prior(p)
+        return [f, f*p[0], f*p[1], f*p[2],
+                f*p[0]**2, f*p[1]**2, f*p[2]**2]
 
     def fit(self, phi, value, error):
         vegas_integrator = vegas.Integrator(self.bounds)
@@ -277,30 +317,30 @@ class BayesianVegasFitter(BaseFitter):
                                   nitn=self.n_iterations,
                                   neval=self.n_evaluations)
 
-        self._set_result(result, phi, value, error)
+        return self._set_result(result, phi, value, error)
 
-
+    
     def _set_result(self, result, phi, value, error):
-        self.z = result[0].mean 
-        self.quality = result.Q 
-        self.fit_parameters = np.array([result[1].mean/self.z, 
-                                       result[2].mean/self.z, 
-                                       result[3].mean/self.z])
+        z = result[0].mean 
+        quality = result.Q 
+        fit_parameters = np.array([result[1].mean/z, 
+                                   result[2].mean/z, 
+                                   result[3].mean/z])
 
-        self.fit_errors = np.array([result[4].mean/self.z - self.fit_parameters[0]**2, 
-                                   result[5].mean/self.z - self.fit_parameters[1]**2,
-                                   result[6].mean/self.z - self.fit_parameters[2]**2])
+        fit_errors = np.array([result[4].mean/z - fit_parameters[0]**2, 
+                               result[5].mean/z - fit_parameters[1]**2,
+                               result[6].mean/z - fit_parameters[2]**2])
 
-        self.fit_errors = np.sqrt(self.fit_errors)
-        self.loss = loss.chi2(value, 
-                              self.model.update_and_evaluate(phi, self.fit_parameters),
-                              error)
+        fit_errors = np.sqrt(fit_errors)
+        loss_value = loss.chi2(value, 
+                               self.model.update_and_evaluate(phi, fit_parameters),
+                               error)
 
-    def _integrand(self, phi, value, error, p):
-        theory = self.model.update_and_evaluate(phi, p)
-        f = self.likelihood(value, theory, error)*self.prior(p)
-        return [f, f*p[0], f*p[1], f*p[2],
-                f*p[0]**2, f*p[1]**2, f*p[2]**2]
+        return FitResult(fit_parameters=fit_parameters,
+                         fit_errors=fit_errors,
+                         loss=loss_value,
+                         quality=quality,
+                         z=z)
 
 class BayesianMCMCFitter(BaseFitter):
     '''
@@ -325,6 +365,9 @@ class BayesianMCMCFitter(BaseFitter):
         self.accept_rate = np.zeros(self.n_iterations)
         self.prob = np.zeros(self.n_iterations)
 
+    def propose_jump(self):
+        return np.random.normal(self.x, self.proposal_sigma)
+
     def fit(self, phi, value, error):
         
         accepted = 0 
@@ -343,25 +386,28 @@ class BayesianMCMCFitter(BaseFitter):
             self.accept_rate[iter] = float(accepted)/float(iter+1)
             self.prob[iter] = prob
         
-        self._set_results(phi, value, error)
-
-    def propose_jump(self):
-        return np.random.normal(self.x, self.proposal_sigma)
+        return self._set_results(phi, value, error)
 
     def _set_results(self, phi, value, error):
         
-        self.fit_parameters = np.zeros(self.model.n_pars)
-        self.fit_errors = np.zeros(self.model.n_pars)
+        fit_parameters = np.zeros(self.model.n_pars)
+        fit_errors = np.zeros(self.model.n_pars)
 
         for ipar in range(self.model.n_pars):
-            self.fit_parameters[ipar] = np.average(self.samples[self.burn_in:,ipar])
-            self.fit_errors[ipar] = np.std(self.samples[self.burn_in:,ipar])
+            fit_parameters[ipar] = np.average(self.samples[self.burn_in:,ipar])
+            fit_errors[ipar] = np.std(self.samples[self.burn_in:,ipar])
 
-        self.loss = loss.chi2(value,
-                              self.model.update_and_evaluate(phi, self.fit_parameters),
-                              error)
+        loss_value = loss.chi2(value,
+                               self.model.update_and_evaluate(phi, fit_parameters),
+                               error)
 
-        pred = self.model.update_and_evaluate(phi, self.fit_parameters)
+        pred = self.model.update_and_evaluate(phi, fit_parameters)
         ndf = len(phi)
-        self.quality = 1-chi2pdf.cdf(loss.chi2(value, pred, error), ndf)
+        quality = 1-chi2pdf.cdf(loss.chi2(value, pred, error), ndf)
 
+        return FitResult(fit_parameters=fit_parameters,
+                         fit_errors=fit_errors,
+                         loss=loss_value,
+                         quality=quality,
+                         ndf=ndf,
+                         samples=self.samples[self.burn_in:,:])
