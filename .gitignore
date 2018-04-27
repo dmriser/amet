@@ -7,4 +7,5 @@
 *~ 
 
 # Others 
-*.egg* 
+*.egg*
+*.pyc
